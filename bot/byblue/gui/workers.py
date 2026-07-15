@@ -57,8 +57,6 @@ class TradingWorker(QObject):
     trade_placed = pyqtSignal(dict)  # asset, direction, stake, result, payout, mode
     stopped = pyqtSignal(str)  # reason
     connected = pyqtSignal(bool)
-    assets_loaded = pyqtSignal(dict)
-    assets_error = pyqtSignal(str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -99,19 +97,6 @@ class TradingWorker(QObject):
 
     def stop(self) -> None:
         self._running = False
-
-    def refresh_assets(self, email: str, password: str) -> None:
-        """Runs on the worker thread: logs in (if needed) and lists open assets."""
-        try:
-            if not self._client.connected:
-                self.log_message.emit(f"Conectando a IQ Option como {email}...")
-                self._client.login(email, password)
-                self.log_message.emit("Conectado.")
-            open_assets = self._client.get_open_assets()
-        except IQClientError as exc:
-            self.assets_error.emit(str(exc))
-            return
-        self.assets_loaded.emit(open_assets)
 
     def _connect(self) -> None:
         s = self._settings

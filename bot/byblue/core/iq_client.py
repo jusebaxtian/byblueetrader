@@ -83,28 +83,6 @@ class IQClient:
     def get_balance(self) -> float:
         return self._require_api().get_balance()
 
-    def get_open_assets(self) -> dict[str, list[str]]:
-        """Returns {"binary": [...], "turbo": [...], "digital": [...]} of open asset names.
-
-        `get_all_open_time()` is known to hang waiting on some asset
-        categories (e.g. forex/cfd) on certain accounts, so this is wrapped
-        with a timeout rather than blocking the worker thread forever.
-        """
-        api = self._require_api()
-        try:
-            open_time = _call_with_timeout(api.get_all_open_time, (), OPEN_ASSETS_TIMEOUT_SECONDS)
-        except _TimeoutError as exc:
-            raise IQClientError(
-                "Tiempo de espera agotado al consultar activos abiertos. "
-                "Intenta de nuevo (IQ Option puede tardar en responder)."
-            ) from exc
-
-        result: dict[str, list[str]] = {}
-        for category in ("binary", "turbo", "digital"):
-            assets = open_time.get(category, {})
-            result[category] = [name for name, info in assets.items() if info.get("open")]
-        return result
-
     def get_candles(self, asset: str, count: int, end_time: float | None = None) -> list[Candle]:
         import time
 

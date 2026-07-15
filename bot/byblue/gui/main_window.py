@@ -4,7 +4,6 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
-    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -30,7 +29,6 @@ HISTORY_COLUMNS = ["Hora", "Activo", "Dirección", "Monto", "Resultado", "Payout
 class MainWindow(QWidget):
     request_start = pyqtSignal(object)  # SessionSettings
     request_stop = pyqtSignal()
-    request_refresh_assets = pyqtSignal(str, str)  # email, password
 
     def __init__(self, email: str = "", password: str = "") -> None:
         super().__init__()
@@ -180,10 +178,6 @@ class MainWindow(QWidget):
         self.asset_combo = QComboBox()
         layout.addWidget(self.asset_combo)
 
-        self.refresh_assets_btn = QPushButton("Actualizar activos (en vivo)")
-        self.refresh_assets_btn.clicked.connect(self._on_refresh_assets)
-        layout.addWidget(self.refresh_assets_btn)
-
         return box
 
     def _current_mode(self) -> OptionMode:
@@ -202,15 +196,12 @@ class MainWindow(QWidget):
     def _wire_worker(self) -> None:
         self.request_start.connect(self._worker.start, Qt.ConnectionType.QueuedConnection)
         self.request_stop.connect(self._worker.stop, Qt.ConnectionType.QueuedConnection)
-        self.request_refresh_assets.connect(self._worker.refresh_assets, Qt.ConnectionType.QueuedConnection)
 
         self._worker.log_message.connect(self._on_log)
         self._worker.balance_updated.connect(self._on_balance)
         self._worker.trade_placed.connect(self._on_trade)
         self._worker.stopped.connect(self._on_stopped)
         self._worker.connected.connect(self._on_connected)
-        self._worker.assets_loaded.connect(self._on_assets_loaded)
-        self._worker.assets_error.connect(self._on_assets_error)
 
     # ---------- actions ----------
     def _populate_popular_assets(self) -> None:
@@ -220,14 +211,6 @@ class MainWindow(QWidget):
     def _on_mode_toggled(self, checked: bool) -> None:
         if checked and hasattr(self, "asset_combo"):
             self._populate_popular_assets()
-
-    def _on_refresh_assets(self) -> None:
-        if not self._email or not self._password:
-            QMessageBox.warning(self, "ByblueTrader", "No hay sesión activa.")
-            return
-        self.refresh_assets_btn.setEnabled(False)
-        self.refresh_assets_btn.setText("Actualizando...")
-        self.request_refresh_assets.emit(self._email, self._password)
 
     def _on_start(self) -> None:
         settings = SessionSettings(
@@ -267,18 +250,6 @@ class MainWindow(QWidget):
         if not ok:
             self.start_btn.setEnabled(True)
             self.stop_btn.setEnabled(False)
-
-    def _on_assets_loaded(self, open_assets: dict) -> None:
-        self.refresh_assets_btn.setEnabled(True)
-        self.refresh_assets_btn.setText("Actualizar activos (en vivo)")
-        self.asset_combo.clear()
-        category = "digital" if self._current_mode() == OptionMode.DIGITAL else "binary"
-        self.asset_combo.addItems(open_assets.get(category, []))
-
-    def _on_assets_error(self, message: str) -> None:
-        self.refresh_assets_btn.setEnabled(True)
-        self.refresh_assets_btn.setText("Actualizar activos (en vivo)")
-        QMessageBox.critical(self, "ByblueTrader", message)
 
     def _on_stopped(self, reason: str) -> None:
         self.status_label.setText(f"Detenido: {reason}")
