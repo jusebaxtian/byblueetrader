@@ -20,6 +20,7 @@ from byblue.strategy.five_minute import FiveMinuteStrategy
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 1
+HEARTBEAT_INTERVAL_SECONDS = 15
 
 
 class SessionSettings:
@@ -133,11 +134,15 @@ class TradingWorker(QObject):
                 mg_max_levels=s.mg_max_levels,
             )
         )
-        feed = CandleFeed(self._client, s.asset)
+        feed = CandleFeed(self._client, s.asset, on_debug=self.log_message.emit)
 
         self.log_message.emit(f"Iniciando {strategy.name} en {s.asset}...")
+        last_heartbeat = time.time()
 
         while self._running:
+            if time.time() - last_heartbeat > HEARTBEAT_INTERVAL_SECONDS:
+                last_heartbeat = time.time()
+                self.log_message.emit(f"(activo, esperando cierre de vela de {s.asset}...)")
             try:
                 new_candle = feed.poll_for_new_closed_candle()
             except IQClientError as exc:
