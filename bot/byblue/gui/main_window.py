@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -26,7 +27,10 @@ from byblue.core.models import BalanceMode, OptionMode
 from byblue.core.popular_assets import popular_assets_for
 from byblue.gui.workers import STRATEGIES, SessionSettings, make_worker_thread
 
-HISTORY_COLUMNS = ["Hora", "Activo", "Dirección", "Monto", "Resultado", "Payout", "Modo"]
+HISTORY_COLUMNS = ["Activo", "Dirección", "Monto", "Resultado", "Ganancia"]
+RESULT_LABELS = {"win": "WIN", "loss": "LOSS", "equal": "EMPATE", "N/A": "N/A"}
+GREEN = QColor("#22c55e")
+RED = QColor("#e6413a")
 
 
 class MainWindow(QWidget):
@@ -40,6 +44,7 @@ class MainWindow(QWidget):
         self._email = email
         self._password = password
         self._license_expires_at = license_expires_at
+        self._session_total = 0.0
 
         self._thread, self._worker = make_worker_thread()
         self._wire_worker()
@@ -64,6 +69,11 @@ class MainWindow(QWidget):
         self.history_table.setHorizontalHeaderLabels(HISTORY_COLUMNS)
         self.history_table.horizontalHeader().setStretchLastSection(True)
         root.addWidget(self.history_table, stretch=1)
+
+        self.total_label = QLabel("Total: 0.00")
+        self.total_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.total_label.setStyleSheet("font-weight: bold; font-size: 15px;")
+        root.addWidget(self.total_label)
 
         self.log_output = QTextEdit()
         self.log_output.setReadOnly(True)
@@ -319,6 +329,8 @@ class MainWindow(QWidget):
             return
 
         self.history_table.setRowCount(0)
+        self._session_total = 0.0
+        self._update_total_label()
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
         self.request_start.emit(settings)
@@ -352,17 +364,38 @@ class MainWindow(QWidget):
     def _append_history_row(self, trade: dict) -> None:
         row = self.history_table.rowCount()
         self.history_table.insertRow(row)
+
+        profit = trade.get("profit", trade.get("payout", 0.0))
+        result_label = RESULT_LABELS.get(trade["result"], trade["result"])
+
         values = [
-            str(trade["timestamp"]),
             trade["asset"],
             trade["direction"],
             f"{trade['stake']:.2f}",
-            trade["result"],
-            f"{trade['payout']:.2f}",
-            trade["mode"],
+            result_label,
+            f"{profit:+.2f}",
         ]
         for col, value in enumerate(values):
             self.history_table.setItem(row, col, QTableWidgetItem(value))
+
+        gain_item = self.history_table.item(row, HISTORY_COLUMNS.index("Ganancia"))
+        if profit > 0:
+            gain_item.setForeground(GREEN)
+        elif profit < 0:
+            gain_item.setForeground(RED)
+
+        if trade["result"] != "N/A":
+            self._session_total += profit
+            self._update_total_label()
+
+    def _update_total_label(self) -> None:
+        self.total_label.setText(f"Total: {self._session_total:+.2f}")
+        if self._session_total > 0:
+            self.total_label.setStyleSheet(f"font-weight: bold; font-size: 15px; color: {GREEN.name()};")
+        elif self._session_total < 0:
+            self.total_label.setStyleSheet(f"font-weight: bold; font-size: 15px; color: {RED.name()};")
+        else:
+            self.total_label.setStyleSheet("font-weight: bold; font-size: 15px;")
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         self.request_stop.emit()

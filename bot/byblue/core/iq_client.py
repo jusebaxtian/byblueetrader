@@ -123,14 +123,20 @@ class IQClient:
         return order_id
 
     def check_binary_result(self, order_id: int, expiration_minutes: int = 1) -> tuple[str, float]:
-        """Blocks until result known. Returns ("win"|"loss"|"equal", payout)."""
+        """Blocks until result known. Returns ("win"|"loss"|"equal", net_profit).
+
+        `check_win_v4` returns the raw status as 'win'/'loose'/'equal' (note:
+        'loose', not 'loss') and its second value is already the net
+        profit/loss (negative on loss, 0 on tie) — not a gross payout.
+        """
         api = self._require_api()
         timeout = expiration_minutes * 60 + RESULT_TIMEOUT_BUFFER_SECONDS
         try:
-            result, payout = _call_with_timeout(api.check_win_v4, (order_id,), timeout)
+            raw_status, profit = _call_with_timeout(api.check_win_v4, (order_id,), timeout)
         except _TimeoutError as exc:
             raise IQClientError(f"Tiempo de espera agotado esperando resultado de la orden {order_id}.") from exc
-        return result, payout
+        status = {"win": "win", "loose": "loss", "equal": "equal"}.get(raw_status, raw_status)
+        return status, profit
 
     def buy_digital(self, asset: str, amount: float, direction: Direction, expiration_minutes: int) -> int:
         api = self._require_api()
@@ -146,13 +152,33 @@ class IQClient:
         return order_id
 
     def check_digital_result(self, order_id: int, expiration_minutes: int = 1) -> tuple[str, float]:
+        """Blocks until result known. Returns ("win"|"loss"|"equal", net_profit).
+
+        `check_win_digital_v2` returns (closed: bool, net_profit) and can
+        return (False, None) if the position simply hasn't closed yet on a
+        given check — it does not itself retry until settlement. We poll it
+        ourselves until closed=True or the overall timeout elapses.
+        """
+        import time
+
         api = self._require_api()
         timeout = expiration_minutes * 60 + RESULT_TIMEOUT_BUFFER_SECONDS
+
+        def _poll_until_closed():
+            while True:
+                closed, profit = api.check_win_digital_v2(order_id)
+                if closed:
+                    return profit
+                time.sleep(1)
+
         try:
-            result, payout = _call_with_timeout(api.check_win_digital_v2, (order_id,), timeout)
+            profit = _call_with_timeout(_poll_until_closed, (), timeout)
         except _TimeoutError as exc:
             raise IQClientError(f"Tiempo de espera agotado esperando resultado de la orden {order_id}.") from exc
-        return result, payout
+
+        if profit is None or profit == 0:
+            return "equal", 0.0
+        return ("win", profit) if profit > 0 else ("loss", profit)
 
     def place_order(self, mode: OptionMode, asset: str, amount: float, direction: Direction, expiration_minutes: int) -> int:
         if mode == OptionMode.BINARY:

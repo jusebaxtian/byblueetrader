@@ -175,6 +175,7 @@ class TradingWorker(QObject):
                         "stake": 0.0,
                         "result": "N/A",
                         "payout": 0.0,
+                        "profit": 0.0,
                         "mode": s.mode.value,
                         "strategy": strategy.name,
                     }
@@ -194,12 +195,11 @@ class TradingWorker(QObject):
             try:
                 order_id = self._client.place_order(s.mode, s.asset, stake, direction, s.expiration_minutes)
                 self.log_message.emit(f"Orden {order_id} colocada, esperando resultado...")
-                result, payout = self._client.check_result(s.mode, order_id, s.expiration_minutes)
+                result, profit = self._client.check_result(s.mode, order_id, s.expiration_minutes)
             except IQClientError as exc:
                 self.log_message.emit(f"Error al operar: {exc}")
                 continue
 
-            profit = payout if result == "win" else (-stake if result == "loss" else 0.0)
             risk.register_result(direction, profit)
 
             trade = {
@@ -207,7 +207,8 @@ class TradingWorker(QObject):
                 "direction": direction.value,
                 "stake": stake,
                 "result": result,
-                "payout": payout,
+                "payout": profit,
+                "profit": profit,
                 "mode": s.mode.value,
                 "strategy": strategy.name,
                 "timestamp": new_candle.timestamp,
