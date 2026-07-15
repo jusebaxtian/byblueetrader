@@ -1,0 +1,6 @@
+# NOT editable (-e): PyInstaller cannot discover an editable/PEP 660 install's
+# modules, so this must resolve to a real copy under site-packages.
+git+https://github.com/iqoptionapi/iqoptionapi.git@8a903cc094a74af1ed935a56a2d6b5a9ed3319d7#egg=iqoptionapi
+PyQt6==6.7.1
+keyring==25.2.1
+requests==2.32.3
