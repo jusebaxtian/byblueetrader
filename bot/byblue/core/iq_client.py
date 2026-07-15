@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 CANDLE_INTERVAL_SECONDS = 60
 OPEN_ASSETS_TIMEOUT_SECONDS = 20
+ORDER_TIMEOUT_SECONDS = 30
+RESULT_TIMEOUT_BUFFER_SECONDS = 60
 
 
 class IQClientError(Exception):
@@ -134,28 +136,44 @@ class IQClient:
     def buy_binary(self, asset: str, amount: float, direction: Direction, expiration_minutes: int) -> int:
         api = self._require_api()
         action = "call" if direction == Direction.CALL else "put"
-        ok, order_id = api.buy(amount, asset, action, expiration_minutes)
+        try:
+            ok, order_id = _call_with_timeout(api.buy, (amount, asset, action, expiration_minutes), ORDER_TIMEOUT_SECONDS)
+        except _TimeoutError as exc:
+            raise IQClientError(f"Tiempo de espera agotado al comprar {asset}.") from exc
         if not ok:
             raise IQClientError(f"Binary order rejected for {asset}")
         return order_id
 
-    def check_binary_result(self, order_id: int) -> tuple[str, float]:
+    def check_binary_result(self, order_id: int, expiration_minutes: int = 1) -> tuple[str, float]:
         """Blocks until result known. Returns ("win"|"loss"|"equal", payout)."""
         api = self._require_api()
-        result, payout = api.check_win_v4(order_id)
+        timeout = expiration_minutes * 60 + RESULT_TIMEOUT_BUFFER_SECONDS
+        try:
+            result, payout = _call_with_timeout(api.check_win_v4, (order_id,), timeout)
+        except _TimeoutError as exc:
+            raise IQClientError(f"Tiempo de espera agotado esperando resultado de la orden {order_id}.") from exc
         return result, payout
 
     def buy_digital(self, asset: str, amount: float, direction: Direction, expiration_minutes: int) -> int:
         api = self._require_api()
         action = "call" if direction == Direction.CALL else "put"
-        ok, order_id = api.buy_digital_spot(asset, amount, action, expiration_minutes)
+        try:
+            ok, order_id = _call_with_timeout(
+                api.buy_digital_spot, (asset, amount, action, expiration_minutes), ORDER_TIMEOUT_SECONDS
+            )
+        except _TimeoutError as exc:
+            raise IQClientError(f"Tiempo de espera agotado al comprar {asset}.") from exc
         if not ok:
             raise IQClientError(f"Digital order rejected for {asset}")
         return order_id
 
-    def check_digital_result(self, order_id: int) -> tuple[str, float]:
+    def check_digital_result(self, order_id: int, expiration_minutes: int = 1) -> tuple[str, float]:
         api = self._require_api()
-        result, payout = api.check_win_digital_v2(order_id)
+        timeout = expiration_minutes * 60 + RESULT_TIMEOUT_BUFFER_SECONDS
+        try:
+            result, payout = _call_with_timeout(api.check_win_digital_v2, (order_id,), timeout)
+        except _TimeoutError as exc:
+            raise IQClientError(f"Tiempo de espera agotado esperando resultado de la orden {order_id}.") from exc
         return result, payout
 
     def place_order(self, mode: OptionMode, asset: str, amount: float, direction: Direction, expiration_minutes: int) -> int:
@@ -163,7 +181,7 @@ class IQClient:
             return self.buy_binary(asset, amount, direction, expiration_minutes)
         return self.buy_digital(asset, amount, direction, expiration_minutes)
 
-    def check_result(self, mode: OptionMode, order_id: int) -> tuple[str, float]:
+    def check_result(self, mode: OptionMode, order_id: int, expiration_minutes: int = 1) -> tuple[str, float]:
         if mode == OptionMode.BINARY:
-            return self.check_binary_result(order_id)
-        return self.check_digital_result(order_id)
+            return self.check_binary_result(order_id, expiration_minutes)
+        return self.check_digital_result(order_id, expiration_minutes)

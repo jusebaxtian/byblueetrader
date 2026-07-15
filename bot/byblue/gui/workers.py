@@ -183,9 +183,13 @@ class TradingWorker(QObject):
                 break
 
             stake = risk.next_stake()
+            self.log_message.emit(
+                f"Señal detectada: {signal.direction.value} en {s.asset} por {stake} ({signal.reason}). Comprando..."
+            )
             try:
                 order_id = self._client.place_order(s.mode, s.asset, stake, signal.direction, s.expiration_minutes)
-                result, payout = self._client.check_result(s.mode, order_id)
+                self.log_message.emit(f"Orden {order_id} colocada, esperando resultado...")
+                result, payout = self._client.check_result(s.mode, order_id, s.expiration_minutes)
             except IQClientError as exc:
                 self.log_message.emit(f"Error al operar: {exc}")
                 continue
