@@ -5,7 +5,7 @@ background websocket thread). Callers must run this from a worker
 thread, never from the GUI thread.
 """
 import logging
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+import threading
 
 from iqoptionapi.stable_api import IQ_Option
 
@@ -19,6 +19,39 @@ OPEN_ASSETS_TIMEOUT_SECONDS = 20
 
 class IQClientError(Exception):
     pass
+
+
+class _TimeoutError(Exception):
+    pass
+
+
+def _call_with_timeout(func, args, timeout_seconds):
+    """Runs `func(*args)` on a daemon thread and waits up to `timeout_seconds`.
+
+    iqoptionapi calls can busy-wait forever on some accounts/assets. A plain
+    `concurrent.futures.ThreadPoolExecutor` doesn't help: its worker threads
+    aren't daemons, so a permanently stuck call still blocks interpreter
+    shutdown even after `future.result(timeout=...)` raises. A daemon
+    `threading.Thread` lets the caller move on and the process exit cleanly,
+    abandoning the stuck call.
+    """
+    result: list = []
+    error: list = []
+
+    def runner():
+        try:
+            result.append(func(*args))
+        except Exception as exc:  # noqa: BLE001
+            error.append(exc)
+
+    thread = threading.Thread(target=runner, daemon=True)
+    thread.start()
+    thread.join(timeout_seconds)
+    if thread.is_alive():
+        raise _TimeoutError()
+    if error:
+        raise error[0]
+    return result[0]
 
 
 class IQClient:
@@ -56,15 +89,13 @@ class IQClient:
         with a timeout rather than blocking the worker thread forever.
         """
         api = self._require_api()
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(api.get_all_open_time)
-            try:
-                open_time = future.result(timeout=OPEN_ASSETS_TIMEOUT_SECONDS)
-            except FutureTimeoutError as exc:
-                raise IQClientError(
-                    "Tiempo de espera agotado al consultar activos abiertos. "
-                    "Intenta de nuevo (IQ Option puede tardar en responder)."
-                ) from exc
+        try:
+            open_time = _call_with_timeout(api.get_all_open_time, (), OPEN_ASSETS_TIMEOUT_SECONDS)
+        except _TimeoutError as exc:
+            raise IQClientError(
+                "Tiempo de espera agotado al consultar activos abiertos. "
+                "Intenta de nuevo (IQ Option puede tardar en responder)."
+            ) from exc
 
         result: dict[str, list[str]] = {}
         for category in ("binary", "turbo", "digital"):
@@ -77,12 +108,12 @@ class IQClient:
 
         api = self._require_api()
         end_time = end_time or time.time()
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(api.get_candles, asset, CANDLE_INTERVAL_SECONDS, count, end_time)
-            try:
-                raw = future.result(timeout=OPEN_ASSETS_TIMEOUT_SECONDS)
-            except FutureTimeoutError as exc:
-                raise IQClientError(f"Tiempo de espera agotado al pedir velas de {asset}.") from exc
+        try:
+            raw = _call_with_timeout(
+                api.get_candles, (asset, CANDLE_INTERVAL_SECONDS, count, end_time), OPEN_ASSETS_TIMEOUT_SECONDS
+            )
+        except _TimeoutError as exc:
+            raise IQClientError(f"Tiempo de espera agotado al pedir velas de {asset}.") from exc
 
         if raw is None:
             # iqoptionapi returns None (instead of raising) for unknown/rejected assets.
