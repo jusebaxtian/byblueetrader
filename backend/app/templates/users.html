@@ -3,46 +3,67 @@
 <head>
   <meta charset="utf-8">
   <title>ByblueTrader Admin — Usuarios</title>
-  <style>
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; }
-  </style>
+  <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <h1>Usuarios y licencias</h1>
-  <form method="post" action="/admin/logout"><button type="submit">Salir</button></form>
+  <div class="topbar">
+    <div>
+      <h1>ByblueTrader</h1>
+      <p style="color: var(--text-muted); margin: 0;">Usuarios y licencias</p>
+    </div>
+    <form method="post" action="/admin/logout">
+      <button type="submit" class="danger">SALIR</button>
+    </form>
+  </div>
 
-  <h2>Nuevo usuario / licencia</h2>
-  <form method="post" action="/admin/users">
-    <label>Email IQ Option <input type="email" name="iq_email" required></label>
-    <label>Plan <input type="text" name="plan" value="monthly"></label>
-    <label>Vence <input type="datetime-local" name="expires_at" required></label>
-    <button type="submit">Crear</button>
-  </form>
+  <div class="panel">
+    <h2>Nuevo usuario / licencia</h2>
+    <form method="post" action="/admin/users" class="new-user-form">
+      <div class="field">
+        <label for="iq_email">Email IQ Option</label>
+        <input id="iq_email" type="email" name="iq_email" required>
+      </div>
+      <div class="field">
+        <label for="plan">Plan</label>
+        <input id="plan" type="text" name="plan" value="monthly">
+      </div>
+      <div class="field">
+        <label for="expires_at">Vence</label>
+        <input id="expires_at" type="datetime-local" name="expires_at" required>
+      </div>
+      <button type="submit">CREAR</button>
+    </form>
+  </div>
 
-  <h2>Listado</h2>
-  <table>
-    <tr>
-      <th>Email</th><th>Estado</th><th>Plan</th><th>Vence</th><th>Acciones</th>
-    </tr>
-    {% for u in users %}
-    <tr>
-      <td>{{ u.iq_email }}</td>
-      <td>{{ u.status }}</td>
-      <td>{{ u.plan or "" }}</td>
-      <td>{{ u.expires_at or "" }}</td>
-      <td>
-        <form method="post" action="/admin/users/{{ u.id }}/status" style="display:inline">
-          <input type="hidden" name="status" value="{{ 'inactive' if u.status == 'active' else 'active' }}">
-          <button type="submit">{{ 'Desactivar' if u.status == 'active' else 'Activar' }}</button>
-        </form>
-        <form method="post" action="/admin/users/{{ u.id }}/expires" style="display:inline">
-          <input type="datetime-local" name="expires_at" required>
-          <button type="submit">Extender</button>
-        </form>
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
+  <div class="panel">
+    <h2>Listado</h2>
+    <table>
+      <tr>
+        <th>Email</th><th>Estado</th><th>Plan</th><th>Vence</th><th>Acciones</th>
+      </tr>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.iq_email }}</td>
+        <td class="{{ 'status-active' if u.status == 'active' else 'status-inactive' }}">{{ u.status }}</td>
+        <td>{{ u.plan or "" }}</td>
+        <td>{{ u.expires_at or "" }}</td>
+        <td>
+          <div class="actions-cell">
+            <form method="post" action="/admin/users/{{ u.id }}/status" class="inline-form">
+              <input type="hidden" name="status" value="{{ 'inactive' if u.status == 'active' else 'active' }}">
+              <button type="submit" class="{{ 'danger' if u.status == 'active' else '' }}">
+                {{ 'DESACTIVAR' if u.status == 'active' else 'ACTIVAR' }}
+              </button>
+            </form>
+            <form method="post" action="/admin/users/{{ u.id }}/expires" class="inline-form actions-cell">
+              <input type="datetime-local" name="expires_at" required>
+              <button type="submit">EXTENDER</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
 </body>
 </html>
