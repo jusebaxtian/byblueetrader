@@ -13,7 +13,7 @@ from byblue.gui.auth_worker import make_auth_worker_thread
 
 
 class LoginWindow(QWidget):
-    login_succeeded = pyqtSignal(str, str)  # email, password
+    login_succeeded = pyqtSignal(str, str, str)  # email, password, license_expires_at
     request_login = pyqtSignal(str, str)
 
     def __init__(self) -> None:
@@ -91,10 +91,10 @@ class LoginWindow(QWidget):
         self.submit_btn.setText("Verificando...")
         self.request_login.emit(email, password)
 
-    def _on_authenticated(self, email: str, password: str) -> None:
+    def _on_authenticated(self, email: str, password: str, license_expires_at: str) -> None:
         credentials.save_password(email, password)
         credentials.save_last_email(email)
-        self.login_succeeded.emit(email, password)
+        self.login_succeeded.emit(email, password, license_expires_at)
         self.close()
 
     def _on_auth_failed(self, message: str) -> None:

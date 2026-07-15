@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QButtonGroup,
@@ -30,12 +32,13 @@ class MainWindow(QWidget):
     request_start = pyqtSignal(object)  # SessionSettings
     request_stop = pyqtSignal()
 
-    def __init__(self, email: str = "", password: str = "") -> None:
+    def __init__(self, email: str = "", password: str = "", license_expires_at: str = "") -> None:
         super().__init__()
         self.setWindowTitle("ByblueTrader")
         self.resize(980, 680)
         self._email = email
         self._password = password
+        self._license_expires_at = license_expires_at
 
         self._thread, self._worker = make_worker_thread()
         self._wire_worker()
@@ -45,7 +48,6 @@ class MainWindow(QWidget):
 
         self._build_ui()
         self._populate_popular_assets()
-        self._load_history()
 
     # ---------- UI ----------
     def _build_ui(self) -> None:
@@ -54,6 +56,7 @@ class MainWindow(QWidget):
         root.setSpacing(12)
 
         root.addLayout(self._build_header())
+        root.addLayout(self._build_info_row())
         root.addLayout(self._build_config_row())
 
         self.history_table = QTableWidget(0, len(HISTORY_COLUMNS))
@@ -90,6 +93,36 @@ class MainWindow(QWidget):
         row.addWidget(self.stop_btn)
 
         return row
+
+    def _build_info_row(self) -> QHBoxLayout:
+        row = QHBoxLayout()
+
+        self.email_label = QLabel(f"Usuario: {self._email or '—'}")
+        self.email_label.setProperty("role", "panel-title")
+        row.addWidget(self.email_label)
+
+        row.addStretch()
+
+        self.balance_label = QLabel("Saldo: —")
+        self.balance_label.setProperty("role", "panel-title")
+        row.addWidget(self.balance_label)
+
+        row.addStretch()
+
+        self.license_label = QLabel(f"Licencia vigente hasta: {self._format_license_date()}")
+        self.license_label.setProperty("role", "panel-title")
+        row.addWidget(self.license_label)
+
+        return row
+
+    def _format_license_date(self) -> str:
+        if not self._license_expires_at:
+            return "—"
+        try:
+            dt = datetime.fromisoformat(self._license_expires_at)
+        except ValueError:
+            return self._license_expires_at
+        return dt.strftime("%d/%m/%Y")
 
     def _build_config_row(self) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -144,7 +177,7 @@ class MainWindow(QWidget):
         self._balance_mode_group = QButtonGroup(self)
         self._balance_radios: dict[BalanceMode, QRadioButton] = {}
 
-        labels = {BalanceMode.REAL: "REAL", BalanceMode.PRACTICE: "TREINO", BalanceMode.TOURNAMENT: "TORNEIO"}
+        labels = {BalanceMode.REAL: "REAL", BalanceMode.PRACTICE: "PRUEBA", BalanceMode.TOURNAMENT: "TORNEO"}
         for mode in BalanceMode:
             radio = QRadioButton(labels[mode])
             self._balance_mode_group.addButton(radio)
@@ -229,6 +262,7 @@ class MainWindow(QWidget):
             QMessageBox.warning(self, "ByblueTrader", "Selecciona un activo.")
             return
 
+        self.history_table.setRowCount(0)
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
         self.request_start.emit(settings)
@@ -244,7 +278,7 @@ class MainWindow(QWidget):
         self.status_label.setText(message)
 
     def _on_balance(self, balance: float) -> None:
-        self.status_label.setText(f"Conectado — Saldo: {balance:.2f}")
+        self.balance_label.setText(f"Saldo: {balance:.2f}")
 
     def _on_connected(self, ok: bool) -> None:
         if not ok:
@@ -273,20 +307,6 @@ class MainWindow(QWidget):
         ]
         for col, value in enumerate(values):
             self.history_table.setItem(row, col, QTableWidgetItem(value))
-
-    def _load_history(self) -> None:
-        for row in self._history_store.get_recent_trades():
-            self._append_history_row(
-                {
-                    "timestamp": row["timestamp"],
-                    "asset": row["asset"],
-                    "direction": row["direction"],
-                    "stake": row["stake"],
-                    "result": row["result"],
-                    "payout": row["payout"],
-                    "mode": row["mode"],
-                }
-            )
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         self.request_stop.emit()

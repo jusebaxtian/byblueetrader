@@ -16,8 +16,8 @@ def main() -> None:
 
     main_window_holder: list[MainWindow] = []
 
-    def on_login_succeeded(email: str, password: str) -> None:
-        window = MainWindow(email=email, password=password)
+    def on_login_succeeded(email: str, password: str, license_expires_at: str) -> None:
+        window = MainWindow(email=email, password=password, license_expires_at=license_expires_at)
         main_window_holder.append(window)
         window.show()
 

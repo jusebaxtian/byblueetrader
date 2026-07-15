@@ -8,7 +8,7 @@ from byblue.core.license_client import LicenseClient, LicenseError
 
 
 class AuthWorker(QObject):
-    authenticated = pyqtSignal(str, str)  # email, password
+    authenticated = pyqtSignal(str, str, str)  # email, password, license_expires_at (ISO or "")
     auth_failed = pyqtSignal(str)
 
     def __init__(self) -> None:
@@ -17,7 +17,7 @@ class AuthWorker(QObject):
 
     def login(self, email: str, password: str) -> None:
         try:
-            self._license_client.validate(email)
+            license_data = self._license_client.validate(email)
         except LicenseError as exc:
             self.auth_failed.emit(f"Licencia inválida: {exc}")
             return
@@ -28,7 +28,7 @@ class AuthWorker(QObject):
             self.auth_failed.emit(f"Error de autenticación con IQ Option: {exc}")
             return
 
-        self.authenticated.emit(email, password)
+        self.authenticated.emit(email, password, license_data.get("expires_at") or "")
 
 
 def make_auth_worker_thread() -> tuple[QThread, AuthWorker]:
