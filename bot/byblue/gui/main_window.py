@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
 from byblue.core.history_store import HistoryStore
 from byblue.core.models import BalanceMode, OptionMode
 from byblue.core.popular_assets import popular_assets_for
+from byblue.core.version import VERSION
 from byblue.gui.workers import STRATEGIES, SessionSettings, make_worker_thread
 
 HISTORY_COLUMNS = ["Activo", "Dirección", "Monto", "Resultado", "Ganancia"]
@@ -83,6 +84,11 @@ class MainWindow(QWidget):
         self.status_label = QLabel("Desconectado")
         self.status_label.setProperty("role", "statusbar")
         root.addWidget(self.status_label)
+
+        version_label = QLabel(f"V. {VERSION}")
+        version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        version_label.setStyleSheet("color: #666666; font-size: 10px;")
+        root.addWidget(version_label)
 
     def _build_header(self) -> QHBoxLayout:
         row = QHBoxLayout()
