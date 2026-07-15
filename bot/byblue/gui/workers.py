@@ -154,9 +154,20 @@ class TradingWorker(QObject):
                 continue
 
             signal = strategy.on_new_candle(feed.history)
-            if signal.direction is None:
-                self.log_message.emit(f"{new_candle.timestamp}: sin entrada ({signal.reason})")
-                if signal.reason == "N/A":
+
+            if risk.in_martingala():
+                # Martingala rule: repeat the SAME direction as the losing
+                # trade with the multiplied stake, ignoring the strategy's
+                # fresh read of this candle until the level resolves.
+                direction = risk.pending_direction
+                reason = f"Martingala nivel {risk.mg_level}/{s.mg_max_levels}"
+            else:
+                direction = signal.direction
+                reason = signal.reason
+
+            if direction is None:
+                self.log_message.emit(f"{new_candle.timestamp}: sin entrada ({reason})")
+                if reason == "N/A":
                     na_trade = {
                         "timestamp": new_candle.timestamp,
                         "asset": s.asset,
@@ -178,10 +189,10 @@ class TradingWorker(QObject):
 
             stake = risk.next_stake()
             self.log_message.emit(
-                f"Señal detectada: {signal.direction.value} en {s.asset} por {stake} ({signal.reason}). Comprando..."
+                f"Señal detectada: {direction.value} en {s.asset} por {stake} ({reason}). Comprando..."
             )
             try:
-                order_id = self._client.place_order(s.mode, s.asset, stake, signal.direction, s.expiration_minutes)
+                order_id = self._client.place_order(s.mode, s.asset, stake, direction, s.expiration_minutes)
                 self.log_message.emit(f"Orden {order_id} colocada, esperando resultado...")
                 result, payout = self._client.check_result(s.mode, order_id, s.expiration_minutes)
             except IQClientError as exc:
@@ -189,11 +200,11 @@ class TradingWorker(QObject):
                 continue
 
             profit = payout if result == "win" else (-stake if result == "loss" else 0.0)
-            risk.register_result(signal.direction, profit)
+            risk.register_result(direction, profit)
 
             trade = {
                 "asset": s.asset,
-                "direction": signal.direction.value,
+                "direction": direction.value,
                 "stake": stake,
                 "result": result,
                 "payout": payout,

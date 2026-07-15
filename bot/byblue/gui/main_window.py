@@ -3,6 +3,7 @@ from datetime import datetime
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
@@ -176,7 +177,15 @@ class MainWindow(QWidget):
 
     def _build_martingala_panel(self) -> QGroupBox:
         box = QGroupBox("MARTINGALA")
-        form = QFormLayout(box)
+        layout = QVBoxLayout(box)
+
+        self.mg_enabled_check = QCheckBox("Activar Martingala")
+        self.mg_enabled_check.setChecked(True)
+        self.mg_enabled_check.toggled.connect(self._on_martingala_toggled)
+        layout.addWidget(self.mg_enabled_check)
+
+        form = QFormLayout()
+        layout.addLayout(form)
 
         self.mg_multiplier_input = QDoubleSpinBox()
         self.mg_multiplier_input.setRange(1, 10)
@@ -185,11 +194,15 @@ class MainWindow(QWidget):
         form.addRow("Multiplicador:", self.mg_multiplier_input)
 
         self.mg_levels_input = QSpinBox()
-        self.mg_levels_input.setRange(0, 10)
+        self.mg_levels_input.setRange(2, 3)
         self.mg_levels_input.setValue(2)
-        form.addRow("Niveles máx.:", self.mg_levels_input)
+        form.addRow("Niveles (2 o 3):", self.mg_levels_input)
 
         return box
+
+    def _on_martingala_toggled(self, checked: bool) -> None:
+        self.mg_multiplier_input.setEnabled(checked)
+        self.mg_levels_input.setEnabled(checked)
 
     def _build_cuenta_panel(self) -> QGroupBox:
         box = QGroupBox("CUENTA")
@@ -298,7 +311,7 @@ class MainWindow(QWidget):
             stop_win=self.stop_win_input.value(),
             stop_loss=self.stop_loss_input.value(),
             mg_multiplier=self.mg_multiplier_input.value(),
-            mg_max_levels=self.mg_levels_input.value(),
+            mg_max_levels=self.mg_levels_input.value() if self.mg_enabled_check.isChecked() else 0,
             strategy_name=self._current_strategy_name(),
         )
         if not settings.asset:

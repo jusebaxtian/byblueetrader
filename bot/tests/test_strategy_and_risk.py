@@ -97,6 +97,29 @@ def test_stop_loss_triggers():
     assert rm.should_stop() is True
 
 
+def test_martingala_pending_direction_forces_same_side_after_loss():
+    """Mirrors the direction-selection logic in workers.py's trading loop:
+    while in_martingala(), the next entry must reuse pending_direction
+    (the losing trade's side) rather than a fresh strategy read."""
+    rm = RiskManager(RiskConfig(base_stake=1.0, stop_win=100, stop_loss=100, mg_multiplier=2.0, mg_max_levels=2))
+
+    fresh_signal_direction = Direction.CALL
+    direction = rm.pending_direction if rm.in_martingala() else fresh_signal_direction
+    assert direction == Direction.CALL
+    rm.register_result(direction, profit=-1.0)
+
+    # Even if the strategy now reads PUT on the next candle, martingala must
+    # still repeat CALL (the losing direction) with the multiplied stake.
+    fresh_signal_direction = Direction.PUT
+    direction = rm.pending_direction if rm.in_martingala() else fresh_signal_direction
+    assert direction == Direction.CALL
+    assert rm.next_stake() == 2.0
+    rm.register_result(direction, profit=4.0)  # win -> reset
+
+    assert rm.in_martingala() is False
+    assert rm.next_stake() == 1.0
+
+
 def test_mhi_skips_outside_five_minute_mark():
     strategy = MHIStrategy()
     # next candle would start at ts+60=180, not a multiple of 300
