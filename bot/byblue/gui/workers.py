@@ -17,6 +17,7 @@ from byblue.core.models import BalanceMode, OptionMode
 from byblue.core.risk_manager import RiskConfig, RiskManager
 from byblue.strategy.five_minute import FiveMinuteStrategy
 from byblue.strategy.mhi import MHIStrategy
+from byblue.strategy.techos_pisos import TechosPisosStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ HEARTBEAT_INTERVAL_SECONDS = 15
 STRATEGIES = {
     FiveMinuteStrategy.name: FiveMinuteStrategy,
     MHIStrategy.name: MHIStrategy,
+    TechosPisosStrategy.name: TechosPisosStrategy,
 }
 
 

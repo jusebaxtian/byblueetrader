@@ -11,7 +11,9 @@ from byblue.core.iq_client import IQClient
 from byblue.core.models import Candle
 
 POLL_INTERVAL_SECONDS = 1
-HISTORY_SIZE = 20
+# 30: enough for the Techos y Pisos strategy's 20-candle Bollinger Band
+# window plus its 3-candle confirmation window.
+HISTORY_SIZE = 30
 
 
 class CandleFeed:
