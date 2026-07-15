@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from byblue.core.models import Candle, Direction
 from byblue.core.risk_manager import RiskConfig, RiskManager
 from byblue.strategy.five_minute import FiveMinuteStrategy
+from byblue.strategy.mhi import MHIStrategy
 
 
 def make_candle(ts: int, open_: float, close: float) -> Candle:
@@ -94,6 +95,57 @@ def test_stop_loss_triggers():
     rm = RiskManager(RiskConfig(base_stake=1.0, stop_win=100, stop_loss=5.0, mg_max_levels=0))
     rm.register_result(Direction.CALL, profit=-5.0)
     assert rm.should_stop() is True
+
+
+def test_mhi_skips_outside_five_minute_mark():
+    strategy = MHIStrategy()
+    # next candle would start at ts+60=180, not a multiple of 300
+    history = [
+        make_candle(0, 1.10, 1.09),
+        make_candle(60, 1.09, 1.08),
+        make_candle(120, 1.08, 1.07),
+    ]
+    signal = strategy.on_new_candle(history)
+    assert signal.direction is None
+    assert signal.reason == "Fuera de horario MHI"
+
+
+def test_mhi_enters_call_on_majority_red_at_five_minute_mark():
+    strategy = MHIStrategy()
+    # last candle closes at ts=240 -> next candle starts at 300, a multiple of 300
+    history = [
+        make_candle(60, 1.10, 1.11),
+        make_candle(120, 1.10, 1.09),  # red
+        make_candle(180, 1.09, 1.08),  # red
+        make_candle(240, 1.08, 1.075),  # red
+    ]
+    signal = strategy.on_new_candle(history)
+    assert signal.direction == Direction.CALL
+
+
+def test_mhi_enters_put_on_majority_green_at_five_minute_mark():
+    strategy = MHIStrategy()
+    history = [
+        make_candle(60, 1.10, 1.09),
+        make_candle(120, 1.08, 1.09),  # green
+        make_candle(180, 1.09, 1.10),  # green
+        make_candle(240, 1.10, 1.11),  # green
+    ]
+    signal = strategy.on_new_candle(history)
+    assert signal.direction == Direction.PUT
+
+
+def test_mhi_doji_skips_with_na():
+    strategy = MHIStrategy()
+    history = [
+        make_candle(60, 1.10, 1.09),
+        make_candle(120, 1.08, 1.09),  # green
+        make_candle(180, 1.09, 1.09),  # doji
+        make_candle(240, 1.10, 1.11),  # green
+    ]
+    signal = strategy.on_new_candle(history)
+    assert signal.direction is None
+    assert signal.reason == "N/A"
 
 
 if __name__ == "__main__":

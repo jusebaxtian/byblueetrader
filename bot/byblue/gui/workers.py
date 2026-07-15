@@ -16,11 +16,17 @@ from byblue.core.license_client import LicenseClient, LicenseError
 from byblue.core.models import BalanceMode, OptionMode
 from byblue.core.risk_manager import RiskConfig, RiskManager
 from byblue.strategy.five_minute import FiveMinuteStrategy
+from byblue.strategy.mhi import MHIStrategy
 
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 1
 HEARTBEAT_INTERVAL_SECONDS = 15
+
+STRATEGIES = {
+    FiveMinuteStrategy.name: FiveMinuteStrategy,
+    MHIStrategy.name: MHIStrategy,
+}
 
 
 class SessionSettings:
@@ -36,6 +42,7 @@ class SessionSettings:
         stop_loss: float,
         mg_multiplier: float,
         mg_max_levels: int,
+        strategy_name: str = FiveMinuteStrategy.name,
         expiration_minutes: int = 1,
     ) -> None:
         self.email = email
@@ -48,6 +55,7 @@ class SessionSettings:
         self.stop_loss = stop_loss
         self.mg_multiplier = mg_multiplier
         self.mg_max_levels = mg_max_levels
+        self.strategy_name = strategy_name
         self.expiration_minutes = expiration_minutes
 
 
@@ -109,7 +117,8 @@ class TradingWorker(QObject):
 
     def _run_loop(self) -> None:
         s = self._settings
-        strategy = FiveMinuteStrategy()
+        strategy_cls = STRATEGIES.get(s.strategy_name, FiveMinuteStrategy)
+        strategy = strategy_cls()
         risk = RiskManager(
             RiskConfig(
                 base_stake=s.base_stake,

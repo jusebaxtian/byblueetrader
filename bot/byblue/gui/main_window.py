@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (
 from byblue.core.history_store import HistoryStore
 from byblue.core.models import BalanceMode, OptionMode
 from byblue.core.popular_assets import popular_assets_for
-from byblue.gui.workers import SessionSettings, make_worker_thread
+from byblue.gui.workers import STRATEGIES, SessionSettings, make_worker_thread
 
 HISTORY_COLUMNS = ["Hora", "Activo", "Dirección", "Monto", "Resultado", "Payout", "Modo"]
 
@@ -130,6 +130,7 @@ class MainWindow(QWidget):
         row.addWidget(self._build_martingala_panel())
         row.addWidget(self._build_cuenta_panel())
         row.addWidget(self._build_modo_panel())
+        row.addWidget(self._build_estrategia_panel())
         row.addWidget(self._build_activo_panel(), stretch=1)
         return row
 
@@ -204,6 +205,28 @@ class MainWindow(QWidget):
 
         return box
 
+    def _build_estrategia_panel(self) -> QGroupBox:
+        box = QGroupBox("ESTRATEGIA")
+        layout = QVBoxLayout(box)
+        self._strategy_group = QButtonGroup(self)
+        self._strategy_radios: dict[str, QRadioButton] = {}
+
+        for name in STRATEGIES:
+            radio = QRadioButton(name)
+            self._strategy_group.addButton(radio)
+            self._strategy_radios[name] = radio
+            layout.addWidget(radio)
+        first_strategy = next(iter(STRATEGIES))
+        self._strategy_radios[first_strategy].setChecked(True)
+
+        return box
+
+    def _current_strategy_name(self) -> str:
+        for name, radio in self._strategy_radios.items():
+            if radio.isChecked():
+                return name
+        return next(iter(STRATEGIES))
+
     def _build_activo_panel(self) -> QGroupBox:
         box = QGroupBox("ACTIVO")
         layout = QVBoxLayout(box)
@@ -257,6 +280,7 @@ class MainWindow(QWidget):
             stop_loss=self.stop_loss_input.value(),
             mg_multiplier=self.mg_multiplier_input.value(),
             mg_max_levels=self.mg_levels_input.value(),
+            strategy_name=self._current_strategy_name(),
         )
         if not settings.asset:
             QMessageBox.warning(self, "ByblueTrader", "Selecciona un activo.")
