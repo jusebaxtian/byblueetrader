@@ -134,6 +134,7 @@ class TradingWorker(QObject):
 
         self.log_message.emit(f"Iniciando {strategy.name} en {s.asset}...")
         last_heartbeat = time.time()
+        stop_reason = "Detenido manualmente"
 
         while self._running:
             if time.time() - last_heartbeat > HEARTBEAT_INTERVAL_SECONDS:
@@ -186,7 +187,7 @@ class TradingWorker(QObject):
                 continue
 
             if risk.should_stop():
-                self.stopped.emit("Stop Win/Loss alcanzado")
+                stop_reason = "Stop Win/Loss alcanzado"
                 self._running = False
                 break
 
@@ -220,12 +221,12 @@ class TradingWorker(QObject):
             self.balance_updated.emit(self._client.get_balance())
 
             if risk.should_stop():
-                self.stopped.emit("Stop Win/Loss alcanzado")
+                stop_reason = "Stop Win/Loss alcanzado"
                 self._running = False
                 break
 
-        if self._running is False:
-            self.log_message.emit("Detenido.")
+        self.log_message.emit(f"BOT Detenido ({stop_reason}).")
+        self.stopped.emit(stop_reason)
 
 
 def make_worker_thread() -> tuple[QThread, TradingWorker]:

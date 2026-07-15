@@ -343,8 +343,12 @@ class MainWindow(QWidget):
 
     def _on_stop(self) -> None:
         self.request_stop.emit()
-        self.start_btn.setEnabled(True)
+        # Don't re-enable Iniciar yet: the worker may be mid-operation
+        # (esperando vela/comprando/esperando resultado) and can take up to
+        # ~90s to actually exit. Wait for the real `stopped` signal instead
+        # of lying that it already stopped.
         self.stop_btn.setEnabled(False)
+        self.status_label.setText("Deteniendo BOT... (puede tardar hasta que termine la operación en curso)")
 
     # ---------- worker signal handlers ----------
     def _on_log(self, message: str) -> None:
@@ -360,7 +364,7 @@ class MainWindow(QWidget):
             self.stop_btn.setEnabled(False)
 
     def _on_stopped(self, reason: str) -> None:
-        self.status_label.setText(f"Detenido: {reason}")
+        self.status_label.setText(f"BOT Detenido — {reason}")
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
 
