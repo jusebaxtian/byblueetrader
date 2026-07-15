@@ -56,6 +56,8 @@ class TradingWorker(QObject):
     trade_placed = pyqtSignal(dict)  # asset, direction, stake, result, payout, mode
     stopped = pyqtSignal(str)  # reason
     connected = pyqtSignal(bool)
+    assets_loaded = pyqtSignal(dict)
+    assets_error = pyqtSignal(str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -87,18 +89,37 @@ class TradingWorker(QObject):
             return
 
         self.connected.emit(True)
-        self._run_loop()
+        try:
+            self._run_loop()
+        except Exception as exc:  # noqa: BLE001 - never let the worker die silently
+            logger.exception("Trading loop crashed")
+            self._running = False
+            self.stopped.emit(f"Error inesperado, el bot se detuvo: {exc}")
 
     def stop(self) -> None:
         self._running = False
 
+    def refresh_assets(self, email: str, password: str) -> None:
+        """Runs on the worker thread: logs in (if needed) and lists open assets."""
+        try:
+            if not self._client.connected:
+                self.log_message.emit(f"Conectando a IQ Option como {email}...")
+                self._client.login(email, password)
+                self.log_message.emit("Conectado.")
+            open_assets = self._client.get_open_assets()
+        except IQClientError as exc:
+            self.assets_error.emit(str(exc))
+            return
+        self.assets_loaded.emit(open_assets)
+
     def _connect(self) -> None:
         s = self._settings
-        self.log_message.emit(f"Conectando a IQ Option como {s.email}...")
-        self._client.login(s.email, s.password)
+        if not self._client.connected:
+            self.log_message.emit(f"Conectando a IQ Option como {s.email}...")
+            self._client.login(s.email, s.password)
+            self.log_message.emit("Conectado.")
         self._client.change_balance(s.balance_mode)
         self.balance_updated.emit(self._client.get_balance())
-        self.log_message.emit("Conectado.")
 
     def _run_loop(self) -> None:
         s = self._settings
@@ -117,7 +138,18 @@ class TradingWorker(QObject):
         self.log_message.emit(f"Iniciando {strategy.name} en {s.asset}...")
 
         while self._running:
-            new_candle = feed.poll_for_new_closed_candle()
+            try:
+                new_candle = feed.poll_for_new_closed_candle()
+            except IQClientError as exc:
+                self.log_message.emit(f"Error al pedir velas: {exc}")
+                time.sleep(POLL_INTERVAL_SECONDS)
+                continue
+            except Exception as exc:  # noqa: BLE001 - never let the worker die silently
+                logger.exception("Unexpected error polling candles")
+                self.log_message.emit(f"Error inesperado: {exc}")
+                time.sleep(POLL_INTERVAL_SECONDS)
+                continue
+
             if new_candle is None:
                 time.sleep(POLL_INTERVAL_SECONDS)
                 continue

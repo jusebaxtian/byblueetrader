@@ -5,6 +5,7 @@ background websocket thread). Callers must run this from a worker
 thread, never from the GUI thread.
 """
 import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
 from iqoptionapi.stable_api import IQ_Option
 
@@ -13,6 +14,7 @@ from byblue.core.models import BalanceMode, Candle, Direction, OptionMode
 logger = logging.getLogger(__name__)
 
 CANDLE_INTERVAL_SECONDS = 60
+OPEN_ASSETS_TIMEOUT_SECONDS = 20
 
 
 class IQClientError(Exception):
@@ -47,9 +49,23 @@ class IQClient:
         return self._require_api().get_balance()
 
     def get_open_assets(self) -> dict[str, list[str]]:
-        """Returns {"binary": [...], "turbo": [...], "digital": [...]} of open asset names."""
+        """Returns {"binary": [...], "turbo": [...], "digital": [...]} of open asset names.
+
+        `get_all_open_time()` is known to hang waiting on some asset
+        categories (e.g. forex/cfd) on certain accounts, so this is wrapped
+        with a timeout rather than blocking the worker thread forever.
+        """
         api = self._require_api()
-        open_time = api.get_all_open_time()
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(api.get_all_open_time)
+            try:
+                open_time = future.result(timeout=OPEN_ASSETS_TIMEOUT_SECONDS)
+            except FutureTimeoutError as exc:
+                raise IQClientError(
+                    "Tiempo de espera agotado al consultar activos abiertos. "
+                    "Intenta de nuevo (IQ Option puede tardar en responder)."
+                ) from exc
+
         result: dict[str, list[str]] = {}
         for category in ("binary", "turbo", "digital"):
             assets = open_time.get(category, {})
@@ -61,7 +77,17 @@ class IQClient:
 
         api = self._require_api()
         end_time = end_time or time.time()
-        raw = api.get_candles(asset, CANDLE_INTERVAL_SECONDS, count, end_time)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(api.get_candles, asset, CANDLE_INTERVAL_SECONDS, count, end_time)
+            try:
+                raw = future.result(timeout=OPEN_ASSETS_TIMEOUT_SECONDS)
+            except FutureTimeoutError as exc:
+                raise IQClientError(f"Tiempo de espera agotado al pedir velas de {asset}.") from exc
+
+        if raw is None:
+            # iqoptionapi returns None (instead of raising) for unknown/rejected assets.
+            raise IQClientError(f"No se pudieron obtener velas para '{asset}' (activo inválido o cerrado).")
+
         return [
             Candle(
                 asset=asset,

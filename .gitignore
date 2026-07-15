@@ -7,3 +7,4 @@ dist/
 .env
 history.db
 test_history.db
+bot_config_local.py

@@ -20,8 +20,8 @@ from PyQt6.QtWidgets import (
 
 from byblue.core import credentials
 from byblue.core.history_store import HistoryStore
-from byblue.core.iq_client import IQClient, IQClientError
 from byblue.core.models import BalanceMode, OptionMode
+from byblue.core.popular_assets import popular_assets_for
 from byblue.gui.workers import SessionSettings, make_worker_thread
 
 HISTORY_COLUMNS = ["Hora", "Activo", "Dirección", "Monto", "Resultado", "Payout", "Modo"]
@@ -30,6 +30,7 @@ HISTORY_COLUMNS = ["Hora", "Activo", "Dirección", "Monto", "Resultado", "Payout
 class MainWindow(QMainWindow):
     request_start = pyqtSignal(object)  # SessionSettings
     request_stop = pyqtSignal()
+    request_refresh_assets = pyqtSignal(str, str)  # email, password
 
     def __init__(self) -> None:
         super().__init__()
@@ -43,6 +44,7 @@ class MainWindow(QMainWindow):
         self._history_store = HistoryStore()
 
         self._build_ui()
+        self._populate_popular_assets()
         self._load_history()
 
     # ---------- UI ----------
@@ -63,9 +65,10 @@ class MainWindow(QMainWindow):
 
         self.mode_combo = QComboBox()
         self.mode_combo.addItems([m.value for m in OptionMode])
+        self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
 
         self.asset_combo = QComboBox()
-        self.refresh_assets_btn = QPushButton("Actualizar activos")
+        self.refresh_assets_btn = QPushButton("Actualizar activos (en vivo)")
         self.refresh_assets_btn.clicked.connect(self._on_refresh_assets)
 
         self.stake_input = QDoubleSpinBox()
@@ -134,33 +137,33 @@ class MainWindow(QMainWindow):
     def _wire_worker(self) -> None:
         self.request_start.connect(self._worker.start, Qt.ConnectionType.QueuedConnection)
         self.request_stop.connect(self._worker.stop, Qt.ConnectionType.QueuedConnection)
+        self.request_refresh_assets.connect(self._worker.refresh_assets, Qt.ConnectionType.QueuedConnection)
 
         self._worker.log_message.connect(self._on_log)
         self._worker.balance_updated.connect(self._on_balance)
         self._worker.trade_placed.connect(self._on_trade)
         self._worker.stopped.connect(self._on_stopped)
         self._worker.connected.connect(self._on_connected)
+        self._worker.assets_loaded.connect(self._on_assets_loaded)
+        self._worker.assets_error.connect(self._on_assets_error)
 
     # ---------- actions ----------
+    def _populate_popular_assets(self) -> None:
+        self.asset_combo.clear()
+        mode = OptionMode(self.mode_combo.currentText())
+        self.asset_combo.addItems(popular_assets_for(mode))
+
+    def _on_mode_changed(self, _text: str) -> None:
+        self._populate_popular_assets()
+
     def _on_refresh_assets(self) -> None:
-        # Lightweight one-off connection just to list open assets; runs synchronously
-        # here because it's a short call typically issued before Start.
         email, password = self.email_input.text(), self.password_input.text()
         if not email or not password:
             QMessageBox.warning(self, "ByblueTrader", "Ingresa email y password primero.")
             return
-        try:
-            client = IQClient()
-            client.login(email, password)
-            open_assets = client.get_open_assets()
-        except IQClientError as exc:
-            QMessageBox.critical(self, "ByblueTrader", str(exc))
-            return
-
-        self.asset_combo.clear()
-        mode = OptionMode(self.mode_combo.currentText())
-        category = "digital" if mode == OptionMode.DIGITAL else "binary"
-        self.asset_combo.addItems(open_assets.get(category, []))
+        self.refresh_assets_btn.setEnabled(False)
+        self.refresh_assets_btn.setText("Actualizando...")
+        self.request_refresh_assets.emit(email, password)
 
     def _on_email_changed(self) -> None:
         email = self.email_input.text()
@@ -218,6 +221,19 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"Detenido: {reason}")
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
+
+    def _on_assets_loaded(self, open_assets: dict) -> None:
+        self.refresh_assets_btn.setEnabled(True)
+        self.refresh_assets_btn.setText("Actualizar activos")
+        self.asset_combo.clear()
+        mode = OptionMode(self.mode_combo.currentText())
+        category = "digital" if mode == OptionMode.DIGITAL else "binary"
+        self.asset_combo.addItems(open_assets.get(category, []))
+
+    def _on_assets_error(self, message: str) -> None:
+        self.refresh_assets_btn.setEnabled(True)
+        self.refresh_assets_btn.setText("Actualizar activos")
+        QMessageBox.critical(self, "ByblueTrader", message)
 
     def _on_trade(self, trade: dict) -> None:
         self._append_history_row(trade)
