@@ -35,7 +35,7 @@ class MainWindow(QWidget):
     def __init__(self, email: str = "", password: str = "", license_expires_at: str = "") -> None:
         super().__init__()
         self.setWindowTitle("ByblueTrader")
-        self.resize(980, 680)
+        self.resize(760, 840)
         self._email = email
         self._password = password
         self._license_expires_at = license_expires_at
@@ -57,7 +57,7 @@ class MainWindow(QWidget):
 
         root.addLayout(self._build_header())
         root.addLayout(self._build_info_row())
-        root.addLayout(self._build_config_row())
+        root.addLayout(self._build_config_rows())
 
         self.history_table = QTableWidget(0, len(HISTORY_COLUMNS))
         self.history_table.setHorizontalHeaderLabels(HISTORY_COLUMNS)
@@ -124,15 +124,34 @@ class MainWindow(QWidget):
             return self._license_expires_at
         return dt.strftime("%d/%m/%Y")
 
-    def _build_config_row(self) -> QHBoxLayout:
-        row = QHBoxLayout()
-        row.addWidget(self._build_gerenciamento_panel())
-        row.addWidget(self._build_martingala_panel())
-        row.addWidget(self._build_cuenta_panel())
-        row.addWidget(self._build_modo_panel())
-        row.addWidget(self._build_estrategia_panel())
-        row.addWidget(self._build_activo_panel(), stretch=1)
-        return row
+    def _build_config_rows(self) -> QVBoxLayout:
+        column = QVBoxLayout()
+        column.setSpacing(12)
+
+        panels = [
+            self._build_gerenciamento_panel(),
+            self._build_martingala_panel(),
+            self._build_cuenta_panel(),
+            self._build_estrategia_panel(),
+            self._build_activo_panel(),
+            self._build_modo_panel(),
+        ]
+        for panel in panels:
+            panel.setMinimumHeight(130)
+
+        top_row = QHBoxLayout()
+        top_row.setSpacing(12)
+        for panel in panels[:3]:
+            top_row.addWidget(panel, stretch=1)
+        column.addLayout(top_row)
+
+        bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(12)
+        for panel in panels[3:]:
+            bottom_row.addWidget(panel, stretch=1)
+        column.addLayout(bottom_row)
+
+        return column
 
     def _build_gerenciamento_panel(self) -> QGroupBox:
         box = QGroupBox("GERENCIAMIENTO")
