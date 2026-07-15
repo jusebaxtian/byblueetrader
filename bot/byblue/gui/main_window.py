@@ -1,15 +1,16 @@
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QCheckBox,
+    QButtonGroup,
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
+    QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
-    QMainWindow,
     QMessageBox,
     QPushButton,
+    QRadioButton,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -18,7 +19,6 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from byblue.core import credentials
 from byblue.core.history_store import HistoryStore
 from byblue.core.models import BalanceMode, OptionMode
 from byblue.core.popular_assets import popular_assets_for
@@ -27,15 +27,17 @@ from byblue.gui.workers import SessionSettings, make_worker_thread
 HISTORY_COLUMNS = ["Hora", "Activo", "Dirección", "Monto", "Resultado", "Payout", "Modo"]
 
 
-class MainWindow(QMainWindow):
+class MainWindow(QWidget):
     request_start = pyqtSignal(object)  # SessionSettings
     request_stop = pyqtSignal()
     request_refresh_assets = pyqtSignal(str, str)  # email, password
 
-    def __init__(self) -> None:
+    def __init__(self, email: str = "", password: str = "") -> None:
         super().__init__()
         self.setWindowTitle("ByblueTrader")
-        self.resize(900, 600)
+        self.resize(980, 680)
+        self._email = email
+        self._password = password
 
         self._thread, self._worker = make_worker_thread()
         self._wire_worker()
@@ -49,89 +51,152 @@ class MainWindow(QMainWindow):
 
     # ---------- UI ----------
     def _build_ui(self) -> None:
-        central = QWidget()
-        self.setCentralWidget(central)
-        root = QVBoxLayout(central)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 12, 16, 16)
+        root.setSpacing(12)
 
-        form = QFormLayout()
-        self.email_input = QLineEdit()
-        self.password_input = QLineEdit()
-        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.remember_password_check = QCheckBox("Recordar contraseña (cifrada en Windows)")
-        self.email_input.editingFinished.connect(self._on_email_changed)
+        root.addLayout(self._build_header())
+        root.addLayout(self._build_config_row())
 
-        self.balance_mode_combo = QComboBox()
-        self.balance_mode_combo.addItems([m.value for m in BalanceMode])
+        self.history_table = QTableWidget(0, len(HISTORY_COLUMNS))
+        self.history_table.setHorizontalHeaderLabels(HISTORY_COLUMNS)
+        self.history_table.horizontalHeader().setStretchLastSection(True)
+        root.addWidget(self.history_table, stretch=1)
 
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItems([m.value for m in OptionMode])
-        self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
+        self.log_output = QTextEdit()
+        self.log_output.setReadOnly(True)
+        self.log_output.setMaximumHeight(90)
+        root.addWidget(self.log_output)
 
-        self.asset_combo = QComboBox()
-        self.refresh_assets_btn = QPushButton("Actualizar activos (en vivo)")
-        self.refresh_assets_btn.clicked.connect(self._on_refresh_assets)
+        self.status_label = QLabel("Desconectado")
+        self.status_label.setProperty("role", "statusbar")
+        root.addWidget(self.status_label)
+
+    def _build_header(self) -> QHBoxLayout:
+        row = QHBoxLayout()
+
+        self.start_btn = QPushButton("INICIAR")
+        self.start_btn.setProperty("role", "primary")
+        self.start_btn.clicked.connect(self._on_start)
+        row.addWidget(self.start_btn)
+
+        title = QLabel("TRADING AUTOMÁTICO")
+        title.setProperty("role", "title")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        row.addWidget(title, stretch=1)
+
+        self.stop_btn = QPushButton("PARAR")
+        self.stop_btn.setProperty("role", "danger")
+        self.stop_btn.setEnabled(False)
+        self.stop_btn.clicked.connect(self._on_stop)
+        row.addWidget(self.stop_btn)
+
+        return row
+
+    def _build_config_row(self) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.addWidget(self._build_gerenciamento_panel())
+        row.addWidget(self._build_martingala_panel())
+        row.addWidget(self._build_cuenta_panel())
+        row.addWidget(self._build_modo_panel())
+        row.addWidget(self._build_activo_panel(), stretch=1)
+        return row
+
+    def _build_gerenciamento_panel(self) -> QGroupBox:
+        box = QGroupBox("GERENCIAMIENTO")
+        form = QFormLayout(box)
 
         self.stake_input = QDoubleSpinBox()
         self.stake_input.setRange(1, 10000)
         self.stake_input.setValue(1)
+        form.addRow("Entrada:", self.stake_input)
 
         self.stop_win_input = QDoubleSpinBox()
         self.stop_win_input.setRange(1, 100000)
         self.stop_win_input.setValue(20)
+        form.addRow("Stop Win:", self.stop_win_input)
 
         self.stop_loss_input = QDoubleSpinBox()
         self.stop_loss_input.setRange(1, 100000)
         self.stop_loss_input.setValue(20)
+        form.addRow("Stop Loss:", self.stop_loss_input)
+
+        return box
+
+    def _build_martingala_panel(self) -> QGroupBox:
+        box = QGroupBox("MARTINGALA")
+        form = QFormLayout(box)
 
         self.mg_multiplier_input = QDoubleSpinBox()
         self.mg_multiplier_input.setRange(1, 10)
         self.mg_multiplier_input.setSingleStep(0.1)
         self.mg_multiplier_input.setValue(2.0)
+        form.addRow("Multiplicador:", self.mg_multiplier_input)
 
         self.mg_levels_input = QSpinBox()
         self.mg_levels_input.setRange(0, 10)
         self.mg_levels_input.setValue(2)
+        form.addRow("Niveles máx.:", self.mg_levels_input)
 
-        form.addRow("Email IQ Option:", self.email_input)
-        form.addRow("Password:", self.password_input)
-        form.addRow("", self.remember_password_check)
-        form.addRow("Cuenta:", self.balance_mode_combo)
-        form.addRow("Modo:", self.mode_combo)
+        return box
 
-        asset_row = QHBoxLayout()
-        asset_row.addWidget(self.asset_combo)
-        asset_row.addWidget(self.refresh_assets_btn)
-        form.addRow("Activo:", asset_row)
+    def _build_cuenta_panel(self) -> QGroupBox:
+        box = QGroupBox("CUENTA")
+        layout = QVBoxLayout(box)
+        self._balance_mode_group = QButtonGroup(self)
+        self._balance_radios: dict[BalanceMode, QRadioButton] = {}
 
-        form.addRow("Monto base:", self.stake_input)
-        form.addRow("Stop Win:", self.stop_win_input)
-        form.addRow("Stop Loss:", self.stop_loss_input)
-        form.addRow("Martingala multiplicador:", self.mg_multiplier_input)
-        form.addRow("Martingala niveles máx.:", self.mg_levels_input)
+        labels = {BalanceMode.REAL: "REAL", BalanceMode.PRACTICE: "TREINO", BalanceMode.TOURNAMENT: "TORNEIO"}
+        for mode in BalanceMode:
+            radio = QRadioButton(labels[mode])
+            self._balance_mode_group.addButton(radio)
+            self._balance_radios[mode] = radio
+            layout.addWidget(radio)
+        self._balance_radios[BalanceMode.PRACTICE].setChecked(True)
 
-        root.addLayout(form)
+        return box
 
-        btn_row = QHBoxLayout()
-        self.start_btn = QPushButton("Iniciar")
-        self.stop_btn = QPushButton("Detener")
-        self.stop_btn.setEnabled(False)
-        self.start_btn.clicked.connect(self._on_start)
-        self.stop_btn.clicked.connect(self._on_stop)
-        btn_row.addWidget(self.start_btn)
-        btn_row.addWidget(self.stop_btn)
-        root.addLayout(btn_row)
+    def _build_modo_panel(self) -> QGroupBox:
+        box = QGroupBox("OPERACIONES")
+        layout = QVBoxLayout(box)
+        self._mode_group = QButtonGroup(self)
+        self._mode_radios: dict[OptionMode, QRadioButton] = {}
 
-        self.status_label = QLabel("Desconectado")
-        root.addWidget(self.status_label)
+        labels = {OptionMode.BINARY: "BINARIAS", OptionMode.DIGITAL: "DIGITAL"}
+        for mode in OptionMode:
+            radio = QRadioButton(labels[mode])
+            radio.toggled.connect(self._on_mode_toggled)
+            self._mode_group.addButton(radio)
+            self._mode_radios[mode] = radio
+            layout.addWidget(radio)
+        self._mode_radios[OptionMode.BINARY].setChecked(True)
 
-        self.history_table = QTableWidget(0, len(HISTORY_COLUMNS))
-        self.history_table.setHorizontalHeaderLabels(HISTORY_COLUMNS)
-        root.addWidget(self.history_table)
+        return box
 
-        self.log_output = QTextEdit()
-        self.log_output.setReadOnly(True)
-        self.log_output.setMaximumHeight(120)
-        root.addWidget(self.log_output)
+    def _build_activo_panel(self) -> QGroupBox:
+        box = QGroupBox("ACTIVO")
+        layout = QVBoxLayout(box)
+
+        self.asset_combo = QComboBox()
+        layout.addWidget(self.asset_combo)
+
+        self.refresh_assets_btn = QPushButton("Actualizar activos (en vivo)")
+        self.refresh_assets_btn.clicked.connect(self._on_refresh_assets)
+        layout.addWidget(self.refresh_assets_btn)
+
+        return box
+
+    def _current_mode(self) -> OptionMode:
+        for mode, radio in self._mode_radios.items():
+            if radio.isChecked():
+                return mode
+        return OptionMode.BINARY
+
+    def _current_balance_mode(self) -> BalanceMode:
+        for mode, radio in self._balance_radios.items():
+            if radio.isChecked():
+                return mode
+        return BalanceMode.PRACTICE
 
     # ---------- worker wiring ----------
     def _wire_worker(self) -> None:
@@ -150,42 +215,27 @@ class MainWindow(QMainWindow):
     # ---------- actions ----------
     def _populate_popular_assets(self) -> None:
         self.asset_combo.clear()
-        mode = OptionMode(self.mode_combo.currentText())
-        self.asset_combo.addItems(popular_assets_for(mode))
+        self.asset_combo.addItems(popular_assets_for(self._current_mode()))
 
-    def _on_mode_changed(self, _text: str) -> None:
-        self._populate_popular_assets()
+    def _on_mode_toggled(self, checked: bool) -> None:
+        if checked and hasattr(self, "asset_combo"):
+            self._populate_popular_assets()
 
     def _on_refresh_assets(self) -> None:
-        email, password = self.email_input.text(), self.password_input.text()
-        if not email or not password:
-            QMessageBox.warning(self, "ByblueTrader", "Ingresa email y password primero.")
+        if not self._email or not self._password:
+            QMessageBox.warning(self, "ByblueTrader", "No hay sesión activa.")
             return
         self.refresh_assets_btn.setEnabled(False)
         self.refresh_assets_btn.setText("Actualizando...")
-        self.request_refresh_assets.emit(email, password)
-
-    def _on_email_changed(self) -> None:
-        email = self.email_input.text()
-        if not email:
-            return
-        saved = credentials.load_password(email)
-        if saved:
-            self.password_input.setText(saved)
-            self.remember_password_check.setChecked(True)
+        self.request_refresh_assets.emit(self._email, self._password)
 
     def _on_start(self) -> None:
-        if self.remember_password_check.isChecked():
-            credentials.save_password(self.email_input.text(), self.password_input.text())
-        else:
-            credentials.delete_password(self.email_input.text())
-
         settings = SessionSettings(
-            email=self.email_input.text(),
-            password=self.password_input.text(),
+            email=self._email,
+            password=self._password,
             asset=self.asset_combo.currentText(),
-            mode=OptionMode(self.mode_combo.currentText()),
-            balance_mode=BalanceMode(self.balance_mode_combo.currentText()),
+            mode=self._current_mode(),
+            balance_mode=self._current_balance_mode(),
             base_stake=self.stake_input.value(),
             stop_win=self.stop_win_input.value(),
             stop_loss=self.stop_loss_input.value(),
@@ -193,7 +243,7 @@ class MainWindow(QMainWindow):
             mg_max_levels=self.mg_levels_input.value(),
         )
         if not settings.asset:
-            QMessageBox.warning(self, "ByblueTrader", "Selecciona un activo (Actualizar activos).")
+            QMessageBox.warning(self, "ByblueTrader", "Selecciona un activo.")
             return
 
         self.start_btn.setEnabled(False)
@@ -208,6 +258,7 @@ class MainWindow(QMainWindow):
     # ---------- worker signal handlers ----------
     def _on_log(self, message: str) -> None:
         self.log_output.append(message)
+        self.status_label.setText(message)
 
     def _on_balance(self, balance: float) -> None:
         self.status_label.setText(f"Conectado — Saldo: {balance:.2f}")
@@ -217,23 +268,22 @@ class MainWindow(QMainWindow):
             self.start_btn.setEnabled(True)
             self.stop_btn.setEnabled(False)
 
-    def _on_stopped(self, reason: str) -> None:
-        self.status_label.setText(f"Detenido: {reason}")
-        self.start_btn.setEnabled(True)
-        self.stop_btn.setEnabled(False)
-
     def _on_assets_loaded(self, open_assets: dict) -> None:
         self.refresh_assets_btn.setEnabled(True)
-        self.refresh_assets_btn.setText("Actualizar activos")
+        self.refresh_assets_btn.setText("Actualizar activos (en vivo)")
         self.asset_combo.clear()
-        mode = OptionMode(self.mode_combo.currentText())
-        category = "digital" if mode == OptionMode.DIGITAL else "binary"
+        category = "digital" if self._current_mode() == OptionMode.DIGITAL else "binary"
         self.asset_combo.addItems(open_assets.get(category, []))
 
     def _on_assets_error(self, message: str) -> None:
         self.refresh_assets_btn.setEnabled(True)
-        self.refresh_assets_btn.setText("Actualizar activos")
+        self.refresh_assets_btn.setText("Actualizar activos (en vivo)")
         QMessageBox.critical(self, "ByblueTrader", message)
+
+    def _on_stopped(self, reason: str) -> None:
+        self.status_label.setText(f"Detenido: {reason}")
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
 
     def _on_trade(self, trade: dict) -> None:
         self._append_history_row(trade)
