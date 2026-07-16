@@ -299,7 +299,14 @@ class MainWindow(QWidget):
     # ---------- worker wiring ----------
     def _wire_worker(self) -> None:
         self.request_start.connect(self._worker.start, Qt.ConnectionType.QueuedConnection)
-        self.request_stop.connect(self._worker.stop, Qt.ConnectionType.QueuedConnection)
+        # DirectConnection (not Queued): _run_loop() is a tight synchronous
+        # while-loop that never returns control to the worker thread's Qt
+        # event loop, so a queued stop() would sit stuck in that thread's
+        # event queue forever and never actually fire. worker.stop() only
+        # does `self._running = False` (a plain attribute write, safe to
+        # call cross-thread), so running it directly in the GUI thread's
+        # call stack is safe and lets it take effect immediately.
+        self.request_stop.connect(self._worker.stop, Qt.ConnectionType.DirectConnection)
 
         self._worker.log_message.connect(self._on_log)
         self._worker.balance_updated.connect(self._on_balance)
