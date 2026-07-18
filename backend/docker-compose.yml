@@ -1,0 +1,9 @@
+services:
+  byblue-backend:
+    build: .
+    container_name: byblue-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8001:8000"
