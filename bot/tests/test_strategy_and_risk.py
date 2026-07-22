@@ -60,6 +60,20 @@ def test_insufficient_history_skips():
     assert signal.direction is None
 
 
+def test_unanimous_three_same_color_skips_with_na():
+    strategy = FiveMinuteStrategy()
+    history = [
+        make_candle(0, 1.10, 1.11),
+        make_candle(60, 1.11, 1.10),
+        make_candle(120, 1.10, 1.09),  # red
+        make_candle(180, 1.09, 1.08),  # red
+        make_candle(240, 1.08, 1.07),  # red -> unanimous 3-0
+    ]
+    signal = strategy.on_new_candle(history)
+    assert signal.direction is None
+    assert signal.reason == "N/A"
+
+
 def test_martingala_progression_and_reset_on_win():
     rm = RiskManager(RiskConfig(base_stake=1.0, stop_win=100, stop_loss=100, mg_multiplier=2.0, mg_max_levels=2))
     assert rm.next_stake() == 1.0
@@ -140,7 +154,7 @@ def test_mhi_enters_call_on_majority_red_at_five_minute_mark():
         make_candle(60, 1.10, 1.11),
         make_candle(120, 1.10, 1.09),  # red
         make_candle(180, 1.09, 1.08),  # red
-        make_candle(240, 1.08, 1.075),  # red
+        make_candle(240, 1.08, 1.085),  # green (2-1 majority, not unanimous)
     ]
     signal = strategy.on_new_candle(history)
     assert signal.direction == Direction.CALL
@@ -152,10 +166,23 @@ def test_mhi_enters_put_on_majority_green_at_five_minute_mark():
         make_candle(60, 1.10, 1.09),
         make_candle(120, 1.08, 1.09),  # green
         make_candle(180, 1.09, 1.10),  # green
-        make_candle(240, 1.10, 1.11),  # green
+        make_candle(240, 1.10, 1.095),  # red (2-1 majority, not unanimous)
     ]
     signal = strategy.on_new_candle(history)
     assert signal.direction == Direction.PUT
+
+
+def test_mhi_unanimous_three_same_color_skips_with_na():
+    strategy = MHIStrategy()
+    history = [
+        make_candle(60, 1.10, 1.11),
+        make_candle(120, 1.10, 1.09),  # red
+        make_candle(180, 1.09, 1.08),  # red
+        make_candle(240, 1.08, 1.075),  # red -> unanimous 3-0
+    ]
+    signal = strategy.on_new_candle(history)
+    assert signal.direction is None
+    assert signal.reason == "N/A"
 
 
 def test_mhi_doji_skips_with_na():

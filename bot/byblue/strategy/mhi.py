@@ -4,6 +4,8 @@ Velas de 1 minuto, expiracion siempre de 1 minuto. Solo dispara en los
 minutos multiplos de 5 del reloj (ej. :00, :05, :10...): al cerrar la vela
 justo anterior a esos minutos, evalua el color mayoritario de las ultimas
 3 velas y entra en el color contrario. Fuera de esos minutos no opera.
+Solo se opera con mayoria 2-1: si las 3 son del mismo color (3-0, unanime)
+o si alguna es doji, se omite la entrada (N/A).
 """
 from byblue.core.models import Candle, Direction
 from byblue.strategy.base import Signal, Strategy
@@ -34,6 +36,8 @@ class MHIStrategy(Strategy):
         greens = sum(1 for c in last_three if c.is_green)
         reds = sum(1 for c in last_three if c.is_red)
 
+        if reds == 3 or greens == 3:
+            return Signal(direction=None, reason="N/A")
         if reds > greens:
             return Signal(direction=Direction.CALL, reason="MHI: mayoria roja -> entra call")
         if greens > reds:

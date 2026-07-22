@@ -4,7 +4,8 @@ Velas de 1 minuto, expiracion siempre de 1 minuto. En cada cierre de vela
 se toma el cuadrante de las ultimas 5 velas cerradas, pero solo se evalua
 el color mayoritario de las ultimas 3 de ese cuadrante. Si la mayoria es
 roja se entra en verde (call); si la mayoria es verde se entra en rojo
-(put). Si alguna de las 3 es doji, se omite la entrada ese minuto.
+(put). Solo se opera con mayoria 2-1: si las 3 son del mismo color (3-0,
+unanime) o si alguna es doji, se omite la entrada ese minuto (N/A).
 """
 from byblue.core.models import Candle, Direction
 from byblue.strategy.base import Signal, Strategy
@@ -29,6 +30,8 @@ class FiveMinuteStrategy(Strategy):
         greens = sum(1 for c in last_three if c.is_green)
         reds = sum(1 for c in last_three if c.is_red)
 
+        if reds == 3 or greens == 3:
+            return Signal(direction=None, reason="N/A")
         if reds > greens:
             return Signal(direction=Direction.CALL, reason="Mayoria roja -> entra call")
         if greens > reds:
