@@ -115,12 +115,16 @@ class IQClient:
         api = self._require_api()
         action = "call" if direction == Direction.CALL else "put"
         try:
-            ok, order_id = _call_with_timeout(api.buy, (amount, asset, action, expiration_minutes), ORDER_TIMEOUT_SECONDS)
+            # api.buy() returns (True, order_id) on success or (False, message)
+            # on rejection — the second value's meaning depends on the first.
+            ok, order_id_or_message = _call_with_timeout(
+                api.buy, (amount, asset, action, expiration_minutes), ORDER_TIMEOUT_SECONDS
+            )
         except _TimeoutError as exc:
             raise IQClientError(f"Tiempo de espera agotado al comprar {asset}.") from exc
         if not ok:
-            raise IQClientError(f"Binary order rejected for {asset}")
-        return order_id
+            raise IQClientError(f"Orden binaria rechazada para {asset}: {order_id_or_message}")
+        return order_id_or_message
 
     def check_binary_result(self, order_id: int, expiration_minutes: int = 1) -> tuple[str, float]:
         """Blocks until result known. Returns ("win"|"loss"|"equal", net_profit).
@@ -142,14 +146,16 @@ class IQClient:
         api = self._require_api()
         action = "call" if direction == Direction.CALL else "put"
         try:
-            ok, order_id = _call_with_timeout(
+            # buy_digital_spot() returns (True, order_id) on success or
+            # (False, error_info) on rejection.
+            ok, order_id_or_error = _call_with_timeout(
                 api.buy_digital_spot, (asset, amount, action, expiration_minutes), ORDER_TIMEOUT_SECONDS
             )
         except _TimeoutError as exc:
             raise IQClientError(f"Tiempo de espera agotado al comprar {asset}.") from exc
         if not ok:
-            raise IQClientError(f"Digital order rejected for {asset}")
-        return order_id
+            raise IQClientError(f"Orden digital rechazada para {asset}: {order_id_or_error}")
+        return order_id_or_error
 
     def check_digital_result(self, order_id: int, expiration_minutes: int = 1) -> tuple[str, float]:
         """Blocks until result known. Returns ("win"|"loss"|"equal", net_profit).
